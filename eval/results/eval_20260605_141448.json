@@ -1,0 +1,10 @@
+{
+  "timestamp": "20260605_141448",
+  "metrics": {
+    "faithfulness": 0.8557454800101858,
+    "answer_relevancy": 0.8281469922188295,
+    "nv_context_relevance": 1.0,
+    "nv_response_groundedness": 0.9
+  },
+  "num_samples": 10
+}

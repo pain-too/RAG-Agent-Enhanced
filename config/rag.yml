@@ -1,0 +1,7 @@
+
+
+chat_model_type: "tongyi"
+chat_model_name: "qwen3-max"
+
+embedding_model_type: "tongyi"
+embedding_model_name: "text-embedding-v4"

@@ -1,0 +1,16 @@
+streamlit>=1.28.0
+langchain>=1.0.0
+langchain-community>=0.4.0
+langchain-core>=1.0.0
+langchain-chroma>=1.0.0
+chromadb>=1.5.0
+pypdf>=4.0.0
+python-dotenv>=1.0.0
+PyYAML>=6.0
+dashscope>=1.25.0
+openpyxl>=3.1.0
+pandas>=2.0.0
+numpy>=1.24.0
+protobuf==3.20.3
+# RAGAS 评估框架（0.4.x 新 API：EvaluationDataset + LangchainLLMWrapper）
+ragas>=0.4.0
