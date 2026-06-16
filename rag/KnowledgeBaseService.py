@@ -315,12 +315,3 @@ class KnowledgeBaseService:
             logger.error(f"❌ 处理 PDF 失败：{file_name}，原因：{str(e)}")
             return f"处理失败：{str(e)}"
 
-    # ===================== 清空向量库 =====================
-    def clear_all_data(self):
-        try:
-            collections = self.client.list_collections()
-            for coll in collections:
-                self.client.delete_collection(coll.name)
-            logger.info("🗑️ 已清空所有向量库数据")
-        except Exception as e:
-            logger.error(f"❌ 清空失败：{str(e)}")

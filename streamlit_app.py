@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import sys
+import uuid
 from pathlib import Path
 
 # 解决云端找不到 rag 模块
@@ -22,6 +23,15 @@ os.environ["DASHSCOPE_API_KEY"] = dashscope_key
 st.set_page_config(page_title="408答疑助手", page_icon="📚")
 st.title("📚 王道408数据结构智能答疑助手")
 
+# ==================== 会话记忆配置 ====================
+# 窗口记忆：只保留最近 N 轮对话（每轮 = user + assistant）
+if "max_history_rounds" not in st.session_state:
+    st.session_state.max_history_rounds = 5  # 默认保留最近5轮
+
+# 会话ID：用于持久化存储
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
 # ==================== 你原版的说明表格（完全保留） ====================
 st.markdown("""
 ### 程序简要说明
@@ -39,8 +49,31 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# ==================== 初始化消息（支持持久化） ====================
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    
+    # 尝试从文件加载历史消息
+    try:
+        from rag.file_history_store import get_history
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        chat_history = get_history(st.session_state.session_id)
+        langchain_messages = chat_history.messages
+        
+        # 转换为前端格式
+        for msg in langchain_messages:
+            role = "user" if isinstance(msg, HumanMessage) else "assistant"
+            st.session_state.messages.append({
+                "role": role,
+                "content": msg.content,
+                "location": ""
+            })
+        
+        if st.session_state.messages:
+            st.info(f"📂 已加载历史对话（共 {len(st.session_state.messages)} 条消息）")
+    except Exception as e:
+        st.warning(f"未找到历史记录或加载失败: {str(e)}")
 
 if "rag" not in st.session_state:
     with st.spinner("正在加载知识库..."):
@@ -69,32 +102,51 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # ==================== AI 回答（原版逻辑） ====================
+    # ==================== AI 回答（支持多轮对话） ====================
     with st.chat_message("assistant"):
         with st.spinner("🤖 Agent 正在思考..."):
             full_answer = ""
             placeholder = st.empty()
-
-            for chunk in st.session_state.agent.execute_stream(prompt):
+            
+            # 构建历史消息（窗口记忆：只传最近 N 轮）
+            history = st.session_state.messages[:-1][-2*st.session_state.max_history_rounds:]
+            
+            # 调用 Agent，传入历史消息
+            for chunk in st.session_state.agent.execute_stream(prompt, history=history):
                 full_answer += chunk
                 placeholder.markdown(full_answer, unsafe_allow_html=True)
 
-            # ====================正则提取定位 ====================
-            with st.spinner("📍 正在检索参考资料定位..."):
-                location_info = st.session_state.rag.search(
-                    query=prompt,
-                    mode="location_only"
-                )
+            if st.session_state.agent._has_tool_call:
+                with st.spinner("📍 正在检索参考资料定位..."):
+                    location_info = st.session_state.rag.search(
+                        query=prompt,
+                        mode="location_only"
+                    )
 
-            if location_info and location_info != "未在王道408数据结构知识库中找到相关内容":
-                with st.expander("📍 参考资料定位", expanded=True):
-                    st.markdown(f"```\n{location_info}\n```")
+                if location_info and location_info != "未在王道408数据结构知识库中找到相关内容":
+                    with st.expander("📍 参考资料定位", expanded=True):
+                        st.markdown(f"```\n{location_info}\n```")
+                else:
+                    st.caption("📍 未检索到相关参考资料定位")
             else:
-                st.caption("📍 未检索到相关参考资料定位")
+                location_info = ""
 
-    # 保存历史（含定位）
+    # ==================== 保存历史（含定位） ====================
     st.session_state.messages.append({
         "role": "assistant",
         "content": full_answer,
         "location": location_info
     })
+    
+    # ==================== 持久化到文件 ====================
+    try:
+        from rag.file_history_store import get_history
+        from langchain_core.messages import HumanMessage, AIMessage
+        
+        chat_history = get_history(st.session_state.session_id)
+        # 保存用户消息
+        chat_history.add_messages([HumanMessage(content=prompt)])
+        # 保存 AI 回答
+        chat_history.add_messages([AIMessage(content=full_answer)])
+    except Exception as e:
+        st.warning(f"⚠️ 保存历史记录失败: {str(e)}")

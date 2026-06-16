@@ -17,11 +17,16 @@ class ReactAgent:
             system_prompt=load_system_prompts(),
             tools=[ds_knowledge_search, ds_concept_compare, ds_chapter_summary],
         )
+        self._has_tool_call = False
 
-    def execute_stream(self, query: str):
+    def execute_stream(self, query: str, history: list = None):
         """
-        Agent 流式执行 - 支持工具调用
+        Agent 流式执行 - 支持工具调用和多轮对话记忆
         LangChain标准消息格式：字典，且字典的值是列表套字典
+        
+        Args:
+            query: 当前用户问题
+            history: 历史消息列表（可选），格式为 [{"role": "user"/"assistant", "content": "..."}]
         """
         # 第一次修改：为每个请求生成唯一的请求ID，用于全链路追踪
         request_id = set_request_id()
@@ -30,11 +35,22 @@ class ReactAgent:
         
         # 第一次修改：记录请求开始日志，包含请求ID和查询内容（前100字符）
         logger.info(f"[Agent执行] 开始处理请求 | 请求ID: {request_id} | 查询: {query[:100]}...")
+        logger.info(f"[Agent执行] 历史消息轮数: {len(history) // 2 if history else 0}")
+        
+        self._has_tool_call = False
+        
+        # 构建输入消息列表
+        input_messages = []
+        
+        # 如果有历史消息，添加到输入中
+        if history:
+            input_messages.extend(history)
+        
+        # 添加当前用户问题
+        input_messages.append({"role": "user", "content": query})
         
         input_dict = {
-            "messages": [
-                {"role": "user", "content": query}
-            ]
+            "messages": input_messages
         }
 
         try:
@@ -54,6 +70,7 @@ class ReactAgent:
                     tool_names = [tc.get('name', 'unknown') for tc in latest_message.tool_calls]
                     # 第一次修改：记录工具调用日志，包含请求ID和被调用的工具列表
                     logger.info(f"[Agent执行] 请求ID: {request_id} | 调用工具: {', '.join(tool_names)}")
+                    self._has_tool_call = True
                     yield f"\n🔧  {', '.join(tool_names)} 正在被调用  \n"
 
                 # 执行完工具后才会有tool类型的消息
