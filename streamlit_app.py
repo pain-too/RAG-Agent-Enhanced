@@ -4,20 +4,30 @@ import sys
 import uuid
 from pathlib import Path
 
+# 强制清除代理环境变量，避免代理服务不可用导致请求失败
+proxy_vars = ['http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']
+for var in proxy_vars:
+    os.environ.pop(var, None)
+
 # 解决云端找不到 rag 模块
 sys.path.append(str(Path(__file__).parent))
 
 # ==================== API KEY 兼容本地 & 云端 ====================
+# DeepSeek API Key（用于聊天模型）
 try:
-    dashscope_key = st.secrets["DASHSCOPE_API_KEY"]
+    deepseek_key = st.secrets["DEEPSEEK_API_KEY"]
 except:
-    dashscope_key = os.environ.get("DASHSCOPE_API_KEY")
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
 
-if not dashscope_key:
-    st.error("❌ 未找到 DASHSCOPE_API_KEY")
+if not deepseek_key:
+    st.error("❌ 未找到 DEEPSEEK_API_KEY，请在环境变量或 .streamlit/secrets.toml 中设置")
     st.stop()
 
-os.environ["DASHSCOPE_API_KEY"] = dashscope_key
+os.environ["DEEPSEEK_API_KEY"] = deepseek_key
+
+# 日志：确认模型配置
+from utils.config_handler import rag_conf
+st.caption(f"🤖 聊天模型: {rag_conf.get('chat_model_type', '?')}/{rag_conf.get('chat_model_name', '?')} | 📐 嵌入模型: {rag_conf.get('embedding_model_type', '?')}/{rag_conf.get('embedding_model_name', '?')}")
 
 # ==================== 页面配置 ====================
 st.set_page_config(page_title="408答疑助手", page_icon="📚")
@@ -116,20 +126,14 @@ if prompt:
                 full_answer += chunk
                 placeholder.markdown(full_answer, unsafe_allow_html=True)
 
-            if st.session_state.agent._has_tool_call:
-                with st.spinner("📍 正在检索参考资料定位..."):
-                    location_info = st.session_state.rag.search(
-                        query=prompt,
-                        mode="location_only"
-                    )
+            # 页码定位：直接从 agent 读取（format 节点已从检索结果中提取，无需重复搜索）
+            location_info = st.session_state.agent.page_locations
 
-                if location_info and location_info != "未在王道408数据结构知识库中找到相关内容":
-                    with st.expander("📍 参考资料定位", expanded=True):
-                        st.markdown(f"```\n{location_info}\n```")
-                else:
-                    st.caption("📍 未检索到相关参考资料定位")
-            else:
-                location_info = ""
+            if location_info:
+                with st.expander("📍 参考资料定位", expanded=True):
+                    st.markdown(f"```\n{location_info}\n```")
+            elif st.session_state.agent._has_tool_call:
+                st.caption("📍 未检索到相关参考资料定位")
 
     # ==================== 保存历史（含定位） ====================
     st.session_state.messages.append({
