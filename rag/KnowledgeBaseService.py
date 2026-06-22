@@ -12,6 +12,35 @@ from utils.logger_handler import logger
 from model.factory import embedding_model  # 从工厂取模型（软编码）
 
 
+# ===================== 顶层便捷入口 =====================
+def ingest(data_dir: str = "data"):
+    """
+    递归扫描 data_dir 下所有 PDF（含子文件夹），去重后入库。
+    用法: python -c "from rag.KnowledgeBaseService import ingest; ingest()"
+    """
+    abs_dir = get_abs_path(data_dir)
+    if not os.path.isdir(abs_dir):
+        logger.error(f"❌ 数据目录不存在: {abs_dir}")
+        return
+
+    kbs = KnowledgeBaseService()
+    pdf_count = 0
+
+    for root, dirs, files in os.walk(abs_dir):
+        for file_name in files:
+            if not file_name.lower().endswith(".pdf"):
+                continue
+            file_path = os.path.join(root, file_name)
+            # 用相对路径作为文件名，保留目录结构，同时避免同名冲突
+            rel_name = os.path.relpath(file_path, abs_dir)
+            logger.info(f"📄 发现 PDF: {rel_name}")
+            result = kbs.upload_entire_pdf(file_path, rel_name)
+            logger.info(f"   结果: {result}")
+            pdf_count += 1
+
+    logger.info(f"✅ 入库完成，共处理 {pdf_count} 个 PDF 文件（含子文件夹）")
+
+
 class KnowledgeBaseService:
     """
     王道408数据结构知识库服务

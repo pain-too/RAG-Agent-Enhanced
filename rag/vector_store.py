@@ -11,12 +11,14 @@ class VectorStoreService:
     避免重复加载资源，实现
     解耦与复用
     """
-    def __init__(self, embedding=None):
+    def __init__(self, embedding=None, kb_service=None):
         logger.info("初始化 VectorStoreService...")
         self.embedding = embedding_model
-        # ===================== 复用 KBS =====================
-        self.kbs = KnowledgeBaseService()
-        self.vector_store = self.kbs.chroma  # 直接用KBS的向量库
+        if kb_service is not None:
+            self.kbs = kb_service
+        else:
+            self.kbs = KnowledgeBaseService()
+        self.vector_store = self.kbs.chroma
         logger.info("VectorStoreService 初始化完成 ✅")
 
 

@@ -1,7 +1,9 @@
+# ==================== 聊天模型 ====================
+chat_model_type: "deepseek"
+chat_model_name: "deepseek-v4-pro"
 
-
-chat_model_type: "tongyi"
-chat_model_name: "qwen3-max"
-
-embedding_model_type: "tongyi"
-embedding_model_name: "text-embedding-v4"
+# ==================== 向量嵌入模型 ====================
+# DeepSeek 无 embedding API，使用本地中文优化模型
+# 首次切换需重新入库：python -c "from rag.KnowledgeBaseService import KnowledgeBaseService; KnowledgeBaseService().ingest()"
+embedding_model_type: "huggingface"
+embedding_model_name: "BAAI/bge-small-zh-v1.5"

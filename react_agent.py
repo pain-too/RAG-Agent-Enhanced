@@ -5,7 +5,7 @@ ReAct Agent —— 基于 LangGraph StateGraph 手动构建（白盒架构）
   create_agent(model, prompt, tools)   ← 旧：一行黑盒
               ↓ 拆为 ↓
   StateGraph（手动构建，每个节点职责单一）
-    ├── ① agent       LLM 决策：绑定工具，判断是否需要检索
+    ├── ① agent       LLM 决策：绑定工具 + 判断是否需要检索
     ├── ② retrieve    纯向量检索（不调 LLM）
     ├── ③ summarize   LLM 基于检索结果生成结构化回答
     └── ④ format      提取页码定位 + 流式输出
@@ -68,21 +68,22 @@ class AgentState(TypedDict):
     page_locations    — format 节点提取的纯页码定位
                         UI 层通过 ReactAgent.page_locations 获取
     """
-    messages: Annotated[list, add_messages]
-    user_query: str
-    task_type: str
-    tool_name: str
-    retrieved_context: str
-    final_answer: str
-    page_locations: str
+    #一、LangGraph 自动管理的（有 reducer）
+    messages: Annotated[list, add_messages] #agent_node 追加 AIMessage，summarize_node 追加 AIMessage
+    #二、流式输出用的（只读，节点间传递）
+    user_query: str                         #execute_stream 初始化时写一次
+    task_type: str                          #retrieve_node 写入
+    tool_name: str                          #retrieve_node 写入
+    #三、处理结果用的（节点产出，下游消费）
+    retrieved_context: str                  #retrieve_node 写入
+    final_answer: str                       #summarize_node写入
+    page_locations: str                     #format_node写入
 
 
 # ==================== 节点函数 ====================
-
 def agent_node(state: AgentState) -> dict:
     """
     ① agent —— LLM 决策节点。
-
     职责:
       - 将 3 个工具绑定到 LLM
       - 读取对话历史（messages），由 LLM 判断是否需要检索
@@ -90,31 +91,76 @@ def agent_node(state: AgentState) -> dict:
 
     输入: state["messages"]（含 SystemMessage + 历史 + 当前 HumanMessage）
     输出: AIMessage（可能包含 tool_calls，也可能直接回答）
+
+    llm_with_tools.invoke(messages)
+        │
+        ▼
+─────────────────────────────────────
+  HTTP 请求 → DashScope API
+  {
+    "messages": [...全部对话历史...],
+    "tools": [...3个工具定义...]
+  }
+─────────────────────────────────────
+        │
+        ▼
+  HTTP 响应（原始 JSON）
+  {
+    "choices": [{
+      "message": {
+        "tool_calls": [{...}]
+      }
+    }]
+  }
+─────────────────────────────────────
+        │
+        ▼
+  LangChain 解析 JSON → 构造 AIMessage 对象
+        │
+        │  response = AIMessage(
+        │      content="",
+        │      tool_calls=[{"name": "ds_knowledge_search", ...}]
+        │  )
+        │
+        ▼
+  return {"messages": [response]}
+        │
+        ▼
+  LangGraph 通过 add_messages reducer
+  把这一条 AIMessage 追加到 state["messages"] 末尾
     """
     logger.info("[节点① agent] LLM 开始决策")
 
     # 绑定工具：LLM 知道有 3 个工具可用，但由我们手动执行
     tools = [ds_knowledge_search, ds_concept_compare, ds_chapter_summary]
     llm_with_tools = chat_model.bind_tools(tools)
+        # bind_tools把工具函数的签名自动转成字典列表，不是添加了工具字段，而是把工具函数的签名自动转成字典列表
+            #类比：s = "hello"
+            #s_upper = s.upper()    s 还是 "hello"，s_upper 是 "HELLO"
 
-    # 调用 LLM：输入对话历史，输出决策结果
+
+    # 调用llm，判断要不要调用工具
     response = llm_with_tools.invoke(state["messages"])
+    # response 是不是返回的JSON，是AIMessage对象，内部封装了 API 返回的所有信息
 
     # 记录工具调用情况
-    if hasattr(response, "tool_calls") and response.tool_calls:
+    if hasattr(response, "tool_calls") and response.tool_calls: #只有在LLM调用工具时tool_calls才有值
         tool_names = [tc.get("name", "?") for tc in response.tool_calls]
+            # 这是一个列表推导式（list comprehension），等价于：
+            #     tool_names = []
+            #     for tc in response.tool_calls:      # ← tc 就是"循环变量"，每次取列表中的一个元素
+            #     tool_names.append(tc.get("name", "?"))
+            
         logger.info(f"[节点① agent] 决定调用工具: {', '.join(tool_names)}")
     else:
         preview = (response.content or "")[:50]
         logger.info(f"[节点① agent] 决定直接回答 | 预览: {preview}...")
-
-    return {"messages": [response]}
+    return {"messages": [response]} #LLM返回结果追加到全局字典
 
 
 def retrieve_node(state: AgentState) -> dict:
     """
     ② retrieve —— 纯检索节点（不调 LLM）。
-
     职责:
       - 从 agent 输出的 tool_call 中提取查询参数
       - 调用 DSRagService.search(mode="full") 做向量检索
@@ -123,10 +169,11 @@ def retrieve_node(state: AgentState) -> dict:
     输入: state["messages"]（最后一条是 agent 的 tool_calls）
     输出: retrieved_context（格式化文本）+ task_type
     """
-    # 第一步：从最后一条 AI 消息中提取 tool_call 参数
+    # reversed(messages) — 从最新消息开始倒着找。因为 tool_call 一定在 agent 节点刚塞进来的那条 AIMessage 里，它在列表最后面。倒着找比正着找更快命中
     messages = state["messages"]
     last_ai_msg = None
     for msg in reversed(messages):
+        #找到的 last_ai_msg 就是 agent 节点产出的那个带 tool_calls 的 AIMessage。
         if hasattr(msg, "type") and msg.type == "ai":
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 last_ai_msg = msg
@@ -141,13 +188,15 @@ def retrieve_node(state: AgentState) -> dict:
         }
 
     # 提取工具名和参数
+    # llm决定是否调用工具时，决定之后会返回api，tool_calls是返回的JSON中的一部分
     tool_call = last_ai_msg.tool_calls[0]
-    tool_name = tool_call.get("name", "")
-    tool_args = tool_call.get("args", {})
+    tool_name = tool_call.get("name", "")       # dict.get(key, default) 安全取值
+    tool_args = tool_call.get("args", {})       # 也是安全取值
 
-    # 不同工具的参数名不一样：query 或 chapter_name
-    search_query = tool_args.get("query") or tool_args.get("chapter_name") or ""
+    # 三个工具的参数名统一为 query
+    search_query = tool_args.get("query", "")
 
+    #只显示前50个字符，因为日志可能很长，50个字符足够让人看出问题
     logger.info(f"[节点② retrieve] 工具: {tool_name} | 查询: {search_query[:50]}...")
 
     # 第二步：根据工具名确定 task_type
@@ -285,7 +334,7 @@ def route_after_agent(state: AgentState) -> str:
       - 有 → "retrieve"（需要先去检索）
       - 无 → "summarize"（直接进入回答）
 
-    这是 LangGraph 的 conditional_edge，等同于流程图的判断菱形。
+    路由也是个死函数，它的作用是判断输入有没有tool_calls字段，要不要真正retrieve其实上面agent已经判断过了，这里只是检查有没有字段
     """
     messages = state["messages"]
 

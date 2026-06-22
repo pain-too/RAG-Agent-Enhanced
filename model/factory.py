@@ -4,6 +4,8 @@ from typing import Any
 #第三方模块
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models import BaseChatModel
+from langchain_openai import ChatOpenAI
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_community.chat_models import ChatTongyi
 #自定义模块
@@ -32,6 +34,18 @@ class ChatModelFactory(BaseModelFactory):
                 model=model_name,
                 api_key=os.getenv("DASHSCOPE_API_KEY")
             )
+
+        elif model_type == "deepseek":
+            api_key = os.getenv("DEEPSEEK_API_KEY")
+            if not api_key:
+                raise ValueError("未设置 DEEPSEEK_API_KEY 环境变量，无法初始化 DeepSeek 模型")
+            return ChatOpenAI(
+                model=model_name,
+                api_key=api_key,
+                base_url="https://api.deepseek.com/v1",
+                temperature=0.3,
+            )
+
         else:
             raise ValueError(f"不支持的模型类型: {model_type}")
 
@@ -47,10 +61,19 @@ class EmbeddingFactory(BaseModelFactory):
         logger.info(f"加载向量模型 | type={model_type}, name={model_name}")
 
         if model_type == "tongyi":
-            # ✅ 正确：向量模型用 DashScopeEmbeddings
-            return DashScopeEmbeddings(
-                model=model_name
+            return DashScopeEmbeddings(model=model_name)
+
+        elif model_type == "huggingface":
+            # 本地模型，无需 API Key
+            # 国内环境通过 hf-mirror.com 镜像加速下载（首次 ~100MB）
+            if not os.getenv("HF_ENDPOINT"):
+                os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+            return HuggingFaceEmbeddings(
+                model_name=model_name,
+                model_kwargs={"device": "cpu"},
+                encode_kwargs={"normalize_embeddings": True},
             )
+
         else:
             raise ValueError(f"不支持的模型类型: {model_type}")
 

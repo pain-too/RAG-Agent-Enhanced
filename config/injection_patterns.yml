@@ -1,0 +1,50 @@
+# ==================== Prompt Injection 检测规则库 ====================
+# 每条规则包含：
+#   name     — 规则名称（审计日志用）
+#   pattern  — 正则表达式（大小写不敏感）
+#   severity — CRITICAL: 直接拒绝 / WARNING: 交 LLM 二次判定
+# =================================================================
+# 修改规则后无需重启，重新加载配置即可生效
+
+patterns:
+  # ──────────── CRITICAL 级别：明确攻击，直接拦截 ────────────
+  - name: "直接指令覆盖"
+    pattern: "(忽略|忘记|无视|别管)(之前|上面|前述|系统|原有).{0,10}(指令|规则|约束|prompt|设定|身份)"
+    severity: CRITICAL
+
+  - name: "角色劫持-DAN"
+    pattern: "(你现在是|从现在起你是|扮演|假装你是|DAN|do anything now|角色扮演)"
+    severity: CRITICAL
+
+  - name: "系统提示词窃取"
+    pattern: "(告诉我你的|说出你的|输出你的|泄露|reveal|打印).{0,15}(系统提示|system.?prompt|指令|设定|规则|初始)"
+    severity: CRITICAL
+
+  - name: "越狱通用前缀"
+    pattern: "(忽略|无视).{0,5}(以上|之前|上面|所有).{0,5}(内容|指令|对话|限制)"
+    severity: CRITICAL
+
+  - name: "越狱后缀威胁"
+    pattern: "(否则|不然|如果不|拒绝).{0,15}(后果|惩罚|毁灭|消失)"
+    severity: CRITICAL
+
+  # ──────────── WARNING 级别：可疑但可能误伤，交 LLM 判定 ────────────
+  - name: "角色越权试探"
+    pattern: "(以|用|换).{0,5}(一个|某种|其他|不同|新).{0,5}(身份|角色|方式|语气)"
+    severity: WARNING
+
+  - name: "越权使用试探"
+    pattern: "(写|生成|帮我写|帮我生成|翻译).{0,10}(代码|作文|邮件|文章|报告|小说|诗歌)"
+    severity: WARNING
+
+  - name: "批量提取试探"
+    pattern: "(全部|所有|整个|完整|一次性).{0,5}(输出|导出|打印|显示|列出来)"
+    severity: WARNING
+
+  - name: "英文注入试探"
+    pattern: "(ignore|forget|disregard).{0,10}(previous|above|prior|all).{0,10}(instructions?|prompts?|rules?|constraints?)"
+    severity: WARNING
+
+  - name: "工具滥用试探"
+    pattern: "(重复|循环|不断|一直|反复).{0,10}(调用|检索|搜索|总结)"
+    severity: WARNING
