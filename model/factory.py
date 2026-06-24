@@ -21,14 +21,10 @@ class BaseModelFactory:
 
 class ChatModelFactory(BaseModelFactory):
     """对话模型工厂"""
-    def generator(self) -> BaseChatModel:
-        if "chat_model_type" not in rag_conf or "chat_model_name" not in rag_conf:
-            raise ValueError("配置文件缺失 chat_model_type 或 chat_model_name")
 
-        model_type = rag_conf["chat_model_type"]
-        model_name = rag_conf["chat_model_name"]
-        logger.info(f"加载聊天模型 | type={model_type}, name={model_name}")
-
+    @staticmethod
+    def _create(model_type: str, model_name: str) -> BaseChatModel:
+        """根据类型和名称创建模型实例（供内部复用）。"""
         if model_type == "tongyi":
             return ChatTongyi(
                 model=model_name,
@@ -48,6 +44,24 @@ class ChatModelFactory(BaseModelFactory):
 
         else:
             raise ValueError(f"不支持的模型类型: {model_type}")
+
+    def generator(self) -> BaseChatModel:
+        if "chat_model_type" not in rag_conf or "chat_model_name" not in rag_conf:
+            raise ValueError("配置文件缺失 chat_model_type 或 chat_model_name")
+
+        model_type = rag_conf["chat_model_type"]
+        model_name = rag_conf["chat_model_name"]
+        logger.info(f"加载聊天模型 | type={model_type}, name={model_name}")
+
+        return self._create(model_type, model_name)
+
+    def rewriter_generator(self) -> BaseChatModel:
+        """创建改写专用模型（轻量级，独立于主 Agent）。"""
+        model_type = rag_conf.get("rewriter_model_type", rag_conf.get("chat_model_type", "deepseek"))
+        model_name = rag_conf.get("rewriter_model_name", "deepseek-chat")
+        logger.info(f"加载改写模型 | type={model_type}, name={model_name}")
+
+        return self._create(model_type, model_name)
 
 
 class EmbeddingFactory(BaseModelFactory):
@@ -80,4 +94,5 @@ class EmbeddingFactory(BaseModelFactory):
 
 # ===================== 对外导出模型实例 =====================
 chat_model = ChatModelFactory().generator()
+rewriter_model = ChatModelFactory().rewriter_generator()
 embedding_model = EmbeddingFactory().generator()

@@ -1,50 +1,135 @@
-# ==================== Prompt Injection 检测规则库 ====================
+# ============================================================
+# Prompt Injection 检测规则库 v2
+# ============================================================
 # 每条规则包含：
-#   name     — 规则名称（审计日志用）
-#   pattern  — 正则表达式（大小写不敏感）
-#   severity — CRITICAL: 直接拒绝 / WARNING: 交 LLM 二次判定
-# =================================================================
-# 修改规则后无需重启，重新加载配置即可生效
+#   name        — 规则标识符（英文，日志/前端用）
+#   attack_type — 攻击类型枚举
+#   severity    — CRITICAL: 直接拒绝 / WARNING: 触发 review_required
+#   description — 中文说明
+#   pools       — 多语言关键词池，编译时自动展开为复合正则
+#   max_gap     — 关键词组间最大字符间距（默认 10）
+#   raw_pattern — 直接正则（用于无法用关键词池表达的复杂模式）
+# ============================================================
+# 中英混合匹配原理：
+#   规则编译时，pools 各组的词自动做 OR 拼接，
+#   组间允许 max_gap 个任意字符，
+#   因此 "ignore 之前的 instructions" 这种混合输入会同时命中中文和英文关键词，不会漏检。
+# ============================================================
 
 patterns:
-  # ──────────── CRITICAL 级别：明确攻击，直接拦截 ────────────
-  - name: "直接指令覆盖"
-    pattern: "(忽略|忘记|无视|别管)(之前|上面|前述|系统|原有).{0,10}(指令|规则|约束|prompt|设定|身份)"
+  # ============================================================
+  # PROMPT_INJECTION — 指令覆盖，试图篡改 Agent 行为
+  # ============================================================
+  - attack_type: PROMPT_INJECTION
     severity: CRITICAL
+    rules:
+      - name: "direct_instruction_override"
+        description: "直接指令覆盖 — 让 AI 忽略/忘记/无视原有规则"
+        pools:
+          - [忽略, 忘记, 无视, 别管, ignore, forget, disregard, override]
+          - [之前, 上面, 前述, 系统, 原有, previous, above, prior, all, system, original]
+          - [指令, 规则, 约束, 设定, 身份, instructions, rules, prompts, constraints, identity]
+        max_gap: 10
 
-  - name: "角色劫持-DAN"
-    pattern: "(你现在是|从现在起你是|扮演|假装你是|DAN|do anything now|角色扮演)"
+      - name: "indirect_instruction"
+        description: "间接指令注入 — 通过礼貌请求/疑问句绕过"
+        pools:
+          - [请, 麻烦, 能不能, 帮我, can you, please, could you, would you]
+          - [忽略, 忘记, 无视, 跳过, ignore, forget, disregard, skip, bypass]
+          - [指令, 规则, 限制, 约束, instructions, rules, restrictions, constraints]
+        max_gap: 15
+
+  # ============================================================
+  # ROLE_ESCAPE — 角色劫持，让 Agent 扮演其他身份
+  # ============================================================
+  - attack_type: ROLE_ESCAPE
     severity: CRITICAL
+    rules:
+      - name: "role_hijack_identity"
+        description: "角色劫持 — 强制 AI 扮演其他身份/人格"
+        pools:
+          - [你现在是, 从现在起你是, 扮演, 假装你是, 你的新身份是, you are now, from now on you are, act as, pretend to be, you are]
+          - [DAN, 开发者模式, 管理员, 无条件AI, 不受限AI, developer mode, admin, unfiltered, unrestricted, 不受限, 无限制, 任何限制, 什么都能]
+        max_gap: 10
 
-  - name: "系统提示词窃取"
-    pattern: "(告诉我你的|说出你的|输出你的|泄露|reveal|打印).{0,15}(系统提示|system.?prompt|指令|设定|规则|初始)"
+      - name: "role_remove_restrictions"
+        description: "角色劫持 — 要求解除安全限制"
+        pools:
+          - [解除, 突破, 绕过, 取消, 移除, 关掉, remove, break, bypass, disable, strip, lift, turn off]
+          - [限制, 约束, 规则, 过滤, 安全机制, restrictions, constraints, filters, safeguards, rules, safety, guardrails]
+        max_gap: 10
+
+  # ============================================================
+  # PROMPT_LEAKAGE — 试图窃取系统提示词/内部配置
+  # ============================================================
+  - attack_type: PROMPT_LEAKAGE
     severity: CRITICAL
+    rules:
+      - name: "prompt_leakage_direct"
+        description: "提示词窃取 — 直接索取系统内部信息"
+        pools:
+          - [告诉我, 说出, 输出, 打印, 显示, 泄露, 透露, reveal, tell me, output, print, show, disclose, repeat, recite, 复述, 逐字]
+          - [系统提示, 初始指令, 你的设定, 你的规则, 你的配置, system prompt, initial instructions, your setup, your rules, your configuration, 你的提示词, 你的prompt, 你的系统]
+        max_gap: 15
 
-  - name: "越狱通用前缀"
-    pattern: "(忽略|无视).{0,5}(以上|之前|上面|所有).{0,5}(内容|指令|对话|限制)"
+      - name: "prompt_leakage_indirect"
+        description: "提示词窃取 — 间接试探（翻译/复述/总结系统指令）"
+        pools:
+          - [翻译, 复述, 总结, 用英文说, translate, repeat, summarize, restate, paraphrase]
+          - [上面, 之前, 系统, 初始, 第一条, above, previous, system, initial, first]
+          - [内容, 指令, 消息, 对话, content, instructions, messages, conversation]
+        max_gap: 10
+
+  # ============================================================
+  # JAILBREAK — 通用越狱攻击
+  # ============================================================
+  - attack_type: JAILBREAK
     severity: CRITICAL
+    rules:
+      - name: "jailbreak_threat"
+        description: "越狱 — 威胁性后缀（不回答就X）"
+        pools:
+          - [否则, 不然, 如果不, 拒绝的话, otherwise, or else, if you refuse, if you don't]
+          - [后果, 惩罚, 毁灭, 消失, 灾难, 人会死, consequences, punishment, destruction, disaster, people will die, harm, bad things]
+        max_gap: 15
 
-  - name: "越狱后缀威胁"
-    pattern: "(否则|不然|如果不|拒绝).{0,15}(后果|惩罚|毁灭|消失)"
-    severity: CRITICAL
+      - name: "jailbreak_hypothetical"
+        description: "越狱 — 假设性框架绕过（在一个没有规则的世界…）"
+        pools:
+          - [假装, 假设, 想象, 如果, pretend, imagine, hypothetical, what if, suppose, scenario]
+          - [没有限制, 不受约束, 没有规则, 可以随意, no restrictions, unrestricted, without rules, without constraints, free to]
+        max_gap: 20
 
-  # ──────────── WARNING 级别：可疑但可能误伤，交 LLM 判定 ────────────
-  - name: "角色越权试探"
-    pattern: "(以|用|换).{0,5}(一个|某种|其他|不同|新).{0,5}(身份|角色|方式|语气)"
+  # ============================================================
+  # SCOPE_ABUSE — 越权使用（WARNING: 可能误伤，触发 review_required）
+  # ============================================================
+  - attack_type: SCOPE_ABUSE
     severity: WARNING
+    rules:
+      - name: "scope_abuse_code"
+        description: "越权使用 — 要求生成代码/程序"
+        pools:
+          - [写, 生成, 帮我写, 帮我生成, 编写, 开发, write, generate, code, create a, build a, develop]
+          - [代码, 程序, 爬虫, 脚本, 网站, 游戏, 应用, code, program, crawler, script, website, game, app, application]
+        max_gap: 10
 
-  - name: "越权使用试探"
-    pattern: "(写|生成|帮我写|帮我生成|翻译).{0,10}(代码|作文|邮件|文章|报告|小说|诗歌)"
-    severity: WARNING
+      - name: "scope_abuse_task"
+        description: "越权使用 — 要求执行通用任务（写邮件/翻译等）"
+        pools:
+          - [写, 翻译, 润色, 总结, 起草, write, translate, polish, summarize, compose, draft]
+          - [邮件, 作文, 文章, 报告, 小说, 诗歌, 简历, email, essay, article, report, novel, poem, story, resume]
+        max_gap: 10
 
-  - name: "批量提取试探"
-    pattern: "(全部|所有|整个|完整|一次性).{0,5}(输出|导出|打印|显示|列出来)"
+  # ============================================================
+  # TOKEN_DOS — Token 消耗型攻击
+  # ============================================================
+  - attack_type: TOKEN_DOS
     severity: WARNING
+    rules:
+      - name: "repeat_dos"
+        description: "Token DoS — 超长重复字符攻击"
+        raw_pattern: "(.)\\1{100,}"
 
-  - name: "英文注入试探"
-    pattern: "(ignore|forget|disregard).{0,10}(previous|above|prior|all).{0,10}(instructions?|prompts?|rules?|constraints?)"
-    severity: WARNING
-
-  - name: "工具滥用试探"
-    pattern: "(重复|循环|不断|一直|反复).{0,10}(调用|检索|搜索|总结)"
-    severity: WARNING
+      - name: "unicode_bypass_attempt"
+        description: "Unicode 绕过 — 检测残留的零宽/控制字符（Layer1 未完全过滤时兜底）"
+        raw_pattern: "[\\u200B-\\u200F\\u2028\\u2029\\uFEFF\\u00AD\\u2060-\\u2064]"

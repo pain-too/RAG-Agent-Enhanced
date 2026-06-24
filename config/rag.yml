@@ -2,6 +2,10 @@
 chat_model_type: "deepseek"
 chat_model_name: "deepseek-v4-pro"
 
+# ==================== 改写模型（轻量级，独立于主 Agent） ====================
+rewriter_model_type: "deepseek"
+rewriter_model_name: "deepseek-chat"
+
 # ==================== 向量嵌入模型 ====================
 # DeepSeek 无 embedding API，使用本地中文优化模型
 # 首次切换需重新入库：python -c "from rag.KnowledgeBaseService import KnowledgeBaseService; KnowledgeBaseService().ingest()"

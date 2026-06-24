@@ -1,19 +1,39 @@
 """
 ReAct Agent —— 基于 LangGraph StateGraph 手动构建（白盒架构）
-
 架构（本次底座搭建的核心）:
   create_agent(model, prompt, tools)   ← 旧：一行黑盒
-              ↓ 拆为 ↓
-  StateGraph（手动构建，每个节点职责单一）
-    ├── ① agent       LLM 决策：绑定工具 + 判断是否需要检索
-    ├── ② retrieve    纯向量检索（不调 LLM）
-    ├── ③ summarize   LLM 基于检索结果生成结构化回答
-    └── ④ format      提取页码定位 + 流式输出
-
-控制流:
-  START → agent → [有 tool_call?]
-                     ├── 是 → retrieve → summarize → format → END
-                     └── 否 → summarize → format → END
+                           ↓ 拆为 ↓
+                         ┌──────────┐
+                         │  START   │
+                         └────┬─────┘
+                              │ ① add_edge
+                              ▼
+                         ┌──────────┐
+                         │  agent   │ ← agent_node: LLM 决策
+                         └────┬─────┘
+                              │ ② add_conditional_edges
+                              │   route_after_agent
+                   ┌──────────┴──────────┐
+                   │ "retrieve"          │ "summarize"
+                   ▼                     │
+              ┌──────────┐               │
+              │ retrieve │ ← retrieve_node: 向量检索
+              └────┬─────┘               │
+                   │        │
+                   ▼                     │
+              ┌──────────┐               │
+              │ summarize│ ← summarize_node
+              └────┬─────┘       LLM 组织回答
+                   │
+                   ▼
+              ┌──────────┐
+              │  format  │ ← format_node: 提取页码
+              └────┬─────┘
+                   │ 
+                   ▼
+              ┌──────────┐
+              │   END    │
+              └──────────┘
 
 对比旧版变化:
   - 旧: create_agent() 封装了 ReAct 循环、工具执行、消息管理
@@ -199,7 +219,7 @@ def retrieve_node(state: AgentState) -> dict:
     #只显示前50个字符，因为日志可能很长，50个字符足够让人看出问题
     logger.info(f"[节点② retrieve] 工具: {tool_name} | 查询: {search_query[:50]}...")
 
-    # 第二步：根据工具名确定 task_type
+    # 第二步：根据工具名确定 task_type，task_type 用于后续 summarize 的 prompt 选择
     if "compare" in tool_name:
         task_type = "compare"
     elif "summary" in tool_name or "chapter" in tool_name:
@@ -240,12 +260,26 @@ def summarize_node(state: AgentState) -> dict:
     """
     ③ summarize —— LLM 总结节点。
 
-    职责:
-      - 有检索结果时：调用 _llm_summarize，按 task_type 选模板生成结构化回答
-      - 无检索结果时：agent 已经直接回答了，透传其内容
-
-    输入: state["user_query"] + state["retrieved_context"] + state["task_type"]
-    输出: final_answer（最终回答文本）
+                    agent_node
+                        │
+            ┌───────────┴───────────┐
+            │                       │
+     LLM 决定调工具              LLM 直接回答
+     content=""                 content="你好！我是..."
+     tool_calls=[{...}]         tool_calls=[]
+            │                       │
+            ▼                       │
+      retrieve_node                 │
+      (搜 ChromaDB)                 │
+            │                       │
+      ┌─────┴─────┐                 │
+      │           │                 │
+   搜到了      没搜到                 │
+      │           │                 │
+      ▼           ▼                 ▼
+  分支 1       分支 2             分支 2
+  _llm_summarize   取 agent 的回答   取 agent 的回答
+  (重新组织资料)   (透传)            (透传)
     """
     retrieved_context = state.get("retrieved_context", "")
     task_type = state.get("task_type", "")
@@ -269,13 +303,13 @@ def summarize_node(state: AgentState) -> dict:
                 "messages": [AIMessage(content=f"抱歉，回答生成失败：{str(e)}")],
             }
 
-    # 分支 2: 无检索结果 → agent 已直接回答，取最后一条 AI 消息
+    # 分支 2: 从消息历史里倒着找最后一条「有 content 且没有 tool_calls」的 AI 消息，Agent的回答就在里面，这是一段过滤函数
     messages = state["messages"]
     direct_answer = ""
     for msg in reversed(messages):
         if hasattr(msg, "type") and msg.type == "ai":
             if hasattr(msg, "content") and msg.content:
-                # 排除仅包含 tool_calls 的消息（其 content 通常为空）
+                # 一层一层把Agent回答抠出来
                 if not (hasattr(msg, "tool_calls") and msg.tool_calls):
                     direct_answer = msg.content
                     break
@@ -289,17 +323,8 @@ def summarize_node(state: AgentState) -> dict:
     }
 
 
+#只在UI层发挥作用
 def format_node(state: AgentState) -> dict:
-    """
-    ④ format —— 格式化节点（不调 LLM）。
-
-    职责:
-      - 从 retrieved_context 中提取页码定位（复用 extract_location_only）
-      - 不再额外调用 RAG 搜索，直接从已有数据提取
-
-    输入: state["retrieved_context"]
-    输出: page_locations（纯页码定位文本，供 UI 展示在 expander 中）
-    """
     retrieved_context = state.get("retrieved_context", "")
 
     if not retrieved_context:
@@ -409,17 +434,13 @@ class ReactAgent:
     """
 
     def __init__(self):
-        # 构建手动 StateGraph（替代旧的 create_agent）
         self.graph = build_graph()
-
-        # 保持与旧版兼容的属性
         self._has_tool_call = False   # 本轮是否调用了工具（streamlit 用来决定是否展示页码）
         self.page_locations = ""      # format 节点提取的页码定位（streamlit 直接读取）
 
     def execute_stream(self, query: str, history: list = None):
         """
         Agent 流式执行 —— 接口与旧版保持兼容。
-
         流程:
           1. 构建初始 State（SystemMessage + 历史 + 当前问题）
           2. 通过 StateGraph 流式执行 4 个节点
@@ -442,10 +463,8 @@ class ReactAgent:
         # 重置状态
         self._has_tool_call = False
         self.page_locations = ""
-
         # ──── 构建初始消息列表 ────
         messages = []
-
         # 系统提示词作为第一条消息
         system_prompt = load_system_prompts()
         messages.append(SystemMessage(content=system_prompt))

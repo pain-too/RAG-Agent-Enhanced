@@ -1,0 +1,91 @@
+# ============================================================
+# 408 数据结构术语标准化词典
+# ============================================================
+# 将口语/缩写/英文缩写映射为标准中文术语
+# 用于 Query Rewriter 的术语标准化阶段（纯规则，不调 LLM）
+# ============================================================
+
+terms:
+  # ──── 树的变体 ────
+  - aliases: ["B树", "b树", "b-tree"]
+    standard: "B-树"
+  - aliases: ["B+树", "b+树", "b+tree"]
+    standard: "B+树"
+  - aliases: ["B-树", "b-树"]
+    standard: "B-树"
+  - aliases: ["二叉排序树", "二叉查找树", "BST", "bst"]
+    standard: "二叉搜索树"
+  - aliases: ["红黑树", "RB树", "红黑", "rbtree"]
+    standard: "红黑树"
+  - aliases: ["AVL树", "AVL", "avl树", "平衡二叉树"]
+    standard: "AVL树"
+  - aliases: ["哈夫曼树", "霍夫曼树", "Huffman树", "huffman"]
+    standard: "哈夫曼树"
+  - aliases: ["完全二叉树", "满二叉树"]
+    standard: "完全二叉树"
+
+  # ──── 图论 ────
+  - aliases: ["DFS", "dfs", "深度优先"]
+    standard: "深度优先搜索"
+  - aliases: ["BFS", "bfs", "广度优先"]
+    standard: "广度优先搜索"
+  - aliases: ["Dijkstra", "dijkstra", "迪杰斯特拉", "狄克斯特拉"]
+    standard: "Dijkstra算法"
+  - aliases: ["Floyd", "floyd", "弗洛伊德"]
+    standard: "Floyd算法"
+  - aliases: ["邻接矩阵", "邻接表"]
+    standard: "图的存储结构"
+
+  # ──── 排序 ────
+  - aliases: ["快排", "快速排序", "quicksort"]
+    standard: "快速排序"
+  - aliases: ["归并排序", "mergesort", "归并"]
+    standard: "归并排序"
+  - aliases: ["堆排", "堆排序", "heapsort"]
+    standard: "堆排序"
+  - aliases: ["基数排序", "radixsort", "基数"]
+    standard: "基数排序"
+  - aliases: ["希尔排序", "shellsort", "希尔"]
+    standard: "希尔排序"
+
+  # ──── 其他数据结构 ────
+  - aliases: ["哈希表", "散列表", "hash表", "hashtable", "hashmap"]
+    standard: "哈希表"
+  - aliases: ["大根堆", "最大堆", "大顶堆", "maxheap"]
+    standard: "大根堆"
+  - aliases: ["小根堆", "最小堆", "小顶堆", "minheap"]
+    standard: "小根堆"
+  - aliases: ["优先队列", "优先级队列", "priorityqueue"]
+    standard: "优先队列"
+  - aliases: ["循环队列", "环形队列"]
+    standard: "循环队列"
+  - aliases: ["双向链表", "双链表", "doublylinkedlist"]
+    standard: "双向链表"
+  - aliases: ["单向链表", "单链表", "singlylinkedlist"]
+    standard: "单链表"
+
+  # ──── 算法分析 ────
+  - aliases: ["时间复杂度", "时间效率", "timecomplexity"]
+    standard: "时间复杂度"
+  - aliases: ["空间复杂度", "空间效率", "spacecomplexity"]
+    standard: "空间复杂度"
+  - aliases: ["kmp", "KMP算法", "kmp算法"]
+    standard: "KMP算法"
+  - aliases: ["拓扑排序", "拓扑", "topologicalsort"]
+    standard: "拓扑排序"
+  - aliases: ["关键路径", "criticalpath"]
+    standard: "关键路径"
+  - aliases: ["最小生成树", "MST", "mst", "minimumspanningtree"]
+    standard: "最小生成树"
+  - aliases: ["最短路径", "shortestpath", "最短路"]
+    standard: "最短路径"
+  - aliases: ["并查集", "unionfind", "disjointset"]
+    standard: "并查集"
+
+  # ──── 考研/场景词 ────
+  - aliases: ["408", "408统考", "408考研"]
+    standard: "408考研"
+  - aliases: ["王道", "王道408", "王道考研"]
+    standard: "王道408"
+  - aliases: ["真题", "统考真题", "408真题"]
+    standard: "408真题"
