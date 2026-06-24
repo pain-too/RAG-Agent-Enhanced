@@ -45,7 +45,7 @@ RAG/.DS_Store
 RAG/*.pyc
 
 # 本地生效兼容
-chroma_db/
+# chroma_db/    ← 已提交：Streamlit Cloud 需要预构建向量库
 chat_history/
 data/
 study/

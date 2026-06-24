@@ -4,6 +4,11 @@ import sys
 import uuid
 from pathlib import Path
 
+# ==================== Streamlit Cloud SQLite3 兼容 ====================
+# ChromaDB 需要 SQLite 3.35+，云端默认版本太低
+__import__('pysqlite3')
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 # 强制清除代理环境变量，避免代理服务不可用导致请求失败
 proxy_vars = ['http_proxy', 'https_proxy', 'ALL_PROXY', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY']
 for var in proxy_vars:

@@ -15,5 +15,6 @@ openpyxl>=3.1.0
 pandas>=2.0.0
 numpy>=1.24.0
 protobuf==3.20.3
+pysqlite3-binary>=0.4.6
 # RAGAS 评估框架（0.4.x 新 API：EvaluationDataset + LangchainLLMWrapper）
 ragas>=0.4.0

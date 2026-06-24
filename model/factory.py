@@ -78,10 +78,8 @@ class EmbeddingFactory(BaseModelFactory):
             return DashScopeEmbeddings(model=model_name)
 
         elif model_type == "huggingface":
-            # 本地模型，无需 API Key
-            # 国内环境通过 hf-mirror.com 镜像加速下载（首次 ~100MB）
-            if not os.getenv("HF_ENDPOINT"):
-                os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+            # 本地模型，无需 API Key（首次下载 ~100MB）
+            # 国内本地开发可设置环境变量: export HF_ENDPOINT=https://hf-mirror.com
             return HuggingFaceEmbeddings(
                 model_name=model_name,
                 model_kwargs={"device": "cpu"},
